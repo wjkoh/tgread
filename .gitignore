@@ -1,0 +1,20 @@
+# Binaries and build outputs
+/tgread
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# Local secrets, sessions, and media cache
+.env
+.env.*
+*.session
+session.json
+/media/
+
+# OS and editor artifacts
+.DS_Store
+.direnv/
+.idea/
+.vscode/

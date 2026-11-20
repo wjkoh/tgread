@@ -1,0 +1,37 @@
+version: "3"
+
+tasks:
+  fmt:
+    desc: Format all Go source files
+    cmds:
+      - gofmt -s -w .
+
+  vet:
+    desc: Run go vet and static analysis
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run all unit tests including the compile-time read-only AST audit
+    cmds:
+      - go test -race -count=1 ./...
+
+  build:
+    desc: Build static CGO_ENABLED=0 binary
+    cmds:
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/tgread ./cmd/tgread
+
+  install:
+    desc: Install binary into ~/.local/bin/tgread
+    deps: [build]
+    cmds:
+      - mkdir -p ~/.local/bin
+      - install -m 0755 bin/tgread ~/.local/bin/tgread
+
+  check:
+    desc: Run formatting check, vet, tests, and static build
+    cmds:
+      - test -z "$(gofmt -l .)"
+      - go vet ./...
+      - go test -race -count=1 ./...
+      - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/tgread ./cmd/tgread
