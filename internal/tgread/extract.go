@@ -110,6 +110,18 @@ func (idx *entityIndex) peerMeta(peer tg.PeerClass) (chatID int64, rawID int64, 
 	return chatID, rawID, "", "", peerType
 }
 
+// senderMeta resolves a message sender or forward origin using the user's actual display name
+// rather than "Saved Messages" when the peer is the current user.
+func (idx *entityIndex) senderMeta(peer tg.PeerClass) (senderID int64, name string, username string) {
+	if p, ok := peer.(*tg.PeerUser); ok && idx != nil {
+		if u, found := idx.users[p.UserID]; found {
+			return CanonicalUserID(u.ID), formatUserName(u), u.Username
+		}
+	}
+	id, _, title, uname, _ := idx.peerMeta(peer)
+	return id, title, uname
+}
+
 // SliceUTF16 extracts a substring using Telegram's UTF-16 code unit offset and length.
 func SliceUTF16(text string, offset, length int) string {
 	if offset < 0 || length <= 0 {
@@ -388,7 +400,7 @@ func NormalizeMessage(msg *tg.Message, idx *entityIndex, fallbackChatID int64, f
 		senderPeer = msg.PeerID
 	}
 	if senderPeer != nil {
-		sid, _, sname, suser, _ := idx.peerMeta(senderPeer)
+		sid, sname, suser := idx.senderMeta(senderPeer)
 		out.SenderID = sid
 		out.SenderName = sname
 		out.SenderUsername = suser
@@ -406,7 +418,7 @@ func NormalizeMessage(msg *tg.Message, idx *entityIndex, fallbackChatID int64, f
 		if name, ok := fwd.GetFromName(); ok && name != "" {
 			out.ForwardFrom = name
 		} else if fpeer, ok := fwd.GetFromID(); ok && fpeer != nil {
-			_, _, fname, fuser, _ := idx.peerMeta(fpeer)
+			_, fname, fuser := idx.senderMeta(fpeer)
 			if fname != "" {
 				out.ForwardFrom = fname
 			} else if fuser != "" {

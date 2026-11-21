@@ -113,3 +113,44 @@ func TestCanonicalPeerIDs(t *testing.T) {
 		t.Fatalf("unexpected channel ID: %d %d %s", chid, chraw, chtype)
 	}
 }
+
+func TestNormalizeMessageSelfSenderUsesDisplayName(t *testing.T) {
+	idx := newEntityIndex([]tg.UserClass{
+		&tg.User{ID: 100, Self: true, FirstName: "Woojong", LastName: "Koh", Username: "wjkoh"},
+		&tg.User{ID: 200, FirstName: "DW", LastName: "Kim"},
+	}, nil)
+
+	dmMsg := &tg.Message{
+		ID:      10,
+		Out:     true,
+		PeerID:  &tg.PeerUser{UserID: 200},
+		FromID:  &tg.PeerUser{UserID: 100},
+		Date:    1700000000,
+		Message: "Hello",
+	}
+	dmMsg.SetFlags()
+	gotDM := NormalizeMessage(dmMsg, idx, 200, "DW Kim")
+	if gotDM.SenderName != "Woojong Koh" {
+		t.Fatalf("expected outgoing DM sender_name 'Woojong Koh', got %q", gotDM.SenderName)
+	}
+	if gotDM.ChatTitle != "DW Kim" {
+		t.Fatalf("expected chat_title 'DW Kim', got %q", gotDM.ChatTitle)
+	}
+
+	savedMsg := &tg.Message{
+		ID:      11,
+		Out:     true,
+		PeerID:  &tg.PeerUser{UserID: 100},
+		FromID:  &tg.PeerUser{UserID: 100},
+		Date:    1700000001,
+		Message: "Note to self",
+	}
+	savedMsg.SetFlags()
+	gotSaved := NormalizeMessage(savedMsg, idx, 100, "Saved Messages")
+	if gotSaved.ChatTitle != "Saved Messages" {
+		t.Fatalf("expected Saved Messages chat_title, got %q", gotSaved.ChatTitle)
+	}
+	if gotSaved.SenderName != "Woojong Koh" {
+		t.Fatalf("expected Saved Messages sender_name 'Woojong Koh', got %q", gotSaved.SenderName)
+	}
+}
