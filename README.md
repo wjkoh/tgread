@@ -74,7 +74,7 @@ Standard env-var configuration:
 {
   "mcpServers": {
     "tgread": {
-      "command": "/Users/wjkoh/.local/bin/tgread",
+      "command": "/Users/you/.local/bin/tgread",
       "args": ["serve"],
       "env": {
         "TGREAD_API_ID": "12345678",

@@ -10,9 +10,9 @@ import (
 func TestExtractURLsUTF16AndWebPreview(t *testing.T) {
 	// Include surrogate-pair emoji (2 UTF-16 code units) and Korean Hangul before links.
 	prefix := "📄 보고서: "
-	anchor := "Barbell Deck"
+	anchor := "Quarterly Deck"
 	mid := " and "
-	rawURL := "https://wjkoh.com/brief"
+	rawURL := "https://example.com/brief"
 	text := prefix + anchor + mid + rawURL
 
 	prefixLen := len(utf16.Encode([]rune(prefix)))
@@ -34,9 +34,9 @@ func TestExtractURLsUTF16AndWebPreview(t *testing.T) {
 
 	media := &tg.MessageMediaWebPage{
 		Webpage: &tg.WebPage{
-			URL:         "https://wjkoh.com/brief",
-			DisplayURL:  "wjkoh.com/brief",
-			SiteName:    "wjkoh.com",
+			URL:         "https://example.com/brief",
+			DisplayURL:  "example.com/brief",
+			SiteName:    "example.com",
 			Title:       "Brief",
 			Description: "Summary",
 		},
@@ -46,10 +46,10 @@ func TestExtractURLsUTF16AndWebPreview(t *testing.T) {
 	if len(urls) != 2 {
 		t.Fatalf("expected 2 deduplicated URLs, got %d: %+v", len(urls), urls)
 	}
-	if urls[0].URL != "https://example.com/deck.pdf" || urls[0].Anchor != "Barbell Deck" || urls[0].Source != "entity_text_url" {
+	if urls[0].URL != "https://example.com/deck.pdf" || urls[0].Anchor != "Quarterly Deck" || urls[0].Source != "entity_text_url" {
 		t.Fatalf("unexpected hidden URL entry: %+v", urls[0])
 	}
-	if urls[1].URL != "https://wjkoh.com/brief" || urls[1].Source != "entity_url" {
+	if urls[1].URL != "https://example.com/brief" || urls[1].Source != "entity_url" {
 		t.Fatalf("unexpected plain URL entry: %+v", urls[1])
 	}
 }
@@ -116,8 +116,8 @@ func TestCanonicalPeerIDs(t *testing.T) {
 
 func TestNormalizeMessageSelfSenderUsesDisplayName(t *testing.T) {
 	idx := newEntityIndex([]tg.UserClass{
-		&tg.User{ID: 100, Self: true, FirstName: "Woojong", LastName: "Koh", Username: "wjkoh"},
-		&tg.User{ID: 200, FirstName: "DW", LastName: "Kim"},
+		&tg.User{ID: 100, Self: true, FirstName: "Alice", LastName: "Smith", Username: "alice"},
+		&tg.User{ID: 200, FirstName: "Bob", LastName: "Lee"},
 	}, nil)
 
 	dmMsg := &tg.Message{
@@ -129,12 +129,12 @@ func TestNormalizeMessageSelfSenderUsesDisplayName(t *testing.T) {
 		Message: "Hello",
 	}
 	dmMsg.SetFlags()
-	gotDM := NormalizeMessage(dmMsg, idx, 200, "DW Kim")
-	if gotDM.SenderName != "Woojong Koh" {
-		t.Fatalf("expected outgoing DM sender_name 'Woojong Koh', got %q", gotDM.SenderName)
+	gotDM := NormalizeMessage(dmMsg, idx, 200, "Bob Lee")
+	if gotDM.SenderName != "Alice Smith" {
+		t.Fatalf("expected outgoing DM sender_name 'Alice Smith', got %q", gotDM.SenderName)
 	}
-	if gotDM.ChatTitle != "DW Kim" {
-		t.Fatalf("expected chat_title 'DW Kim', got %q", gotDM.ChatTitle)
+	if gotDM.ChatTitle != "Bob Lee" {
+		t.Fatalf("expected chat_title 'Bob Lee', got %q", gotDM.ChatTitle)
 	}
 
 	savedMsg := &tg.Message{
@@ -150,7 +150,7 @@ func TestNormalizeMessageSelfSenderUsesDisplayName(t *testing.T) {
 	if gotSaved.ChatTitle != "Saved Messages" {
 		t.Fatalf("expected Saved Messages chat_title, got %q", gotSaved.ChatTitle)
 	}
-	if gotSaved.SenderName != "Woojong Koh" {
-		t.Fatalf("expected Saved Messages sender_name 'Woojong Koh', got %q", gotSaved.SenderName)
+	if gotSaved.SenderName != "Alice Smith" {
+		t.Fatalf("expected Saved Messages sender_name 'Alice Smith', got %q", gotSaved.SenderName)
 	}
 }
