@@ -7,6 +7,8 @@ A minimal, compile-time read-only Telegram MTProto MCP server and CLI written in
 
 Built for local AI agents (Antigravity CLI, Claude Code, Cursor) to read received Telegram messages, hidden hyperlinks, link previews, and attached PDFs or images without giving a third-party MCP wrapper write access to your personal account.
 
+Read the design essay: [Giving AI Agents Telegram Access Without Handing Over Your Account](https://wjkoh.com/posts/compile-time-read-only-telegram-mcp/).
+
 ## Security Guarantees
 
 1. **Minimal dependency tree:** Only two direct external Go modules (`github.com/gotd/td` and `github.com/modelcontextprotocol/go-sdk`), zero CGO, static binary.
