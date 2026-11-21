@@ -41,6 +41,16 @@ Create an app at https://my.telegram.org/apps to obtain `API_ID` and `API_HASH`.
 
 ### 2. One-time interactive login
 
+Scan a QR code directly in Telegram (**Settings → Devices → Link Desktop Device**):
+
+```bash
+tgread login --qr \
+  --api-id-file /run/secrets/telegram/api_id \
+  --api-hash-file /run/secrets/telegram/api_hash
+```
+
+Or use phone number + login code:
+
 ```bash
 export TGREAD_API_ID=12345678
 export TGREAD_API_HASH=your_api_hash

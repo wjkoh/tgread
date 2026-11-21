@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/telegram/auth/qrlogin"
 	"github.com/gotd/td/tg"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -118,7 +120,7 @@ func (c *commonConfig) buildPolicy() (*policy.AccessPolicy, error) {
 	})
 }
 
-func (c *commonConfig) newClient() (*telegram.Client, error) {
+func (c *commonConfig) newClient(updateHandler telegram.UpdateHandler) (*telegram.Client, error) {
 	if err := c.validateCredentials(); err != nil {
 		return nil, err
 	}
@@ -126,15 +128,17 @@ func (c *commonConfig) newClient() (*telegram.Client, error) {
 	if err := os.MkdirAll(sessDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create session dir: %w", err)
 	}
-	return telegram.NewClient(c.APIID, c.APIHash, telegram.Options{
-		NoUpdates:      true,
+	opts := telegram.Options{
+		NoUpdates:      updateHandler == nil,
+		UpdateHandler:  updateHandler,
 		AllowCDN:       true,
 		SessionStorage: &session.FileStorage{Path: c.SessionFile},
 		Device: telegram.DeviceConfig{
 			DeviceModel: "tgread",
 			AppVersion:  appVersion,
 		},
-	}), nil
+	}
+	return telegram.NewClient(c.APIID, c.APIHash, opts), nil
 }
 
 func ensureSessionPermissions(path string) {
@@ -217,18 +221,55 @@ func runLogin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	var cfg commonConfig
 	registerCommonFlags(fs, &cfg)
+	useQR := fs.Bool("qr", false, "Log in by scanning a QR code in Telegram (Settings -> Devices -> Link Desktop Device)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	client, err := cfg.newClient()
+	var (
+		dispatcher    tg.UpdateDispatcher
+		updateHandler telegram.UpdateHandler
+	)
+	if *useQR {
+		dispatcher = tg.NewUpdateDispatcher()
+		updateHandler = dispatcher
+	}
+
+	client, err := cfg.newClient(updateHandler)
 	if err != nil {
 		return err
 	}
 	return client.Run(ctx, func(ctx context.Context) error {
-		flow := auth.NewFlow(terminalAuth{reader: bufio.NewReader(os.Stdin)}, auth.SendCodeOptions{})
-		if err := client.Auth().IfNecessary(ctx, flow); err != nil {
-			return err
+		ta := terminalAuth{reader: bufio.NewReader(os.Stdin)}
+		if *useQR {
+			status, err := client.Auth().Status(ctx)
+			if err != nil {
+				return fmt.Errorf("check auth status: %w", err)
+			}
+			if !status.Authorized {
+				loggedIn := qrlogin.OnLoginToken(dispatcher)
+				qrFlow := qrlogin.NewQR(client.API(), cfg.APIID, cfg.APIHash, qrlogin.Options{
+					Migrate:  client.MigrateTo,
+					Password: ta.Password,
+				})
+				if _, err := qrFlow.Auth(ctx, loggedIn, func(_ context.Context, token qrlogin.Token) error {
+					img, err := token.Image(0)
+					if err != nil {
+						return fmt.Errorf("render QR image: %w", err)
+					}
+					fmt.Fprintln(os.Stderr, "\nScan this QR code in Telegram (Settings -> Devices -> Link Desktop Device):")
+					fmt.Fprintln(os.Stderr, renderQRToTerminal(img))
+					fmt.Fprintf(os.Stderr, "Token URL: %s\nWaiting for scan...\n", token.URL())
+					return nil
+				}); err != nil {
+					return err
+				}
+			}
+		} else {
+			flow := auth.NewFlow(ta, auth.SendCodeOptions{})
+			if err := client.Auth().IfNecessary(ctx, flow); err != nil {
+				return err
+			}
 		}
 		ensureSessionPermissions(cfg.SessionFile)
 
@@ -255,7 +296,7 @@ func runWithService(ctx context.Context, cfg *commonConfig, fn func(ctx context.
 	if err != nil {
 		return err
 	}
-	client, err := cfg.newClient()
+	client, err := cfg.newClient(nil)
 	if err != nil {
 		return err
 	}
@@ -428,13 +469,133 @@ func (a terminalAuth) Phone(_ context.Context) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
-func (a terminalAuth) Code(_ context.Context, _ *tg.AuthSentCode) (string, error) {
+func (a terminalAuth) Code(_ context.Context, sentCode *tg.AuthSentCode) (string, error) {
+	fmt.Fprintf(os.Stderr, "Login code sent via %s.\n", describeSentCodeType(sentCode))
 	fmt.Fprint(os.Stderr, "Telegram login code: ")
 	line, err := a.reader.ReadString('\n')
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
+}
+
+func describeSentCodeType(sent *tg.AuthSentCode) string {
+	if sent == nil || sent.Type == nil {
+		return "unknown delivery channel"
+	}
+	switch t := sent.Type.(type) {
+	case *tg.AuthSentCodeTypeApp:
+		return fmt.Sprintf("Telegram app (%d-digit code in the official 'Telegram' chat — check Archived Chats if muted)", t.Length)
+	case *tg.AuthSentCodeTypeSMS:
+		return fmt.Sprintf("SMS (%d-digit code)", t.Length)
+	case *tg.AuthSentCodeTypeEmailCode:
+		return fmt.Sprintf("email to %s (%d-digit code)", t.EmailPattern, t.Length)
+	case *tg.AuthSentCodeTypeFragmentSMS:
+		return fmt.Sprintf("Fragment SMS (%s)", t.URL)
+	case *tg.AuthSentCodeTypeCall:
+		return fmt.Sprintf("phone call (%d-digit code)", t.Length)
+	case *tg.AuthSentCodeTypeFlashCall:
+		return "flash phone call"
+	case *tg.AuthSentCodeTypeMissedCall:
+		return "missed phone call"
+	default:
+		return fmt.Sprintf("%T", sent.Type)
+	}
+}
+
+// renderQRToTerminal converts a QR code image into a compact ANSI half-block string
+// with black foreground on white background so it scans reliably on dark and light terminals.
+func renderQRToTerminal(img image.Image) string {
+	b := img.Bounds()
+	isDark := func(x, y int) bool {
+		r, g, bl, _ := img.At(x, y).RGBA()
+		return (r+g+bl)/3 < 0x8000
+	}
+
+	// Find tight bounding box of dark modules and exact pixel scale per module.
+	minX, minY := b.Max.X, b.Max.Y
+	maxX, maxY := b.Min.X-1, b.Min.Y-1
+	scale := b.Dx()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		run := 0
+		prevDark := false
+		rowHasDark := false
+		for x := b.Min.X; x < b.Max.X; x++ {
+			d := isDark(x, y)
+			if d {
+				rowHasDark = true
+				if x < minX {
+					minX = x
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+			if x == b.Min.X {
+				prevDark = d
+				run = 1
+			} else if d == prevDark {
+				run++
+			} else {
+				if prevDark && run > 0 && run < scale {
+					scale = run
+				}
+				prevDark = d
+				run = 1
+			}
+		}
+		if rowHasDark && prevDark && run > 0 && run < scale {
+			scale = run
+		}
+	}
+	if maxX < minX || maxY < minY || scale <= 0 {
+		return ""
+	}
+
+	cols := (maxX-minX+1)/scale + 4 // 2-module quiet zone on left and right
+	rows := (maxY-minY+1)/scale + 4 // 2-module quiet zone on top and bottom
+
+	moduleDark := func(mx, my int) bool {
+		if mx < 2 || my < 2 || mx >= cols-2 || my >= rows-2 {
+			return false
+		}
+		px := minX + (mx-2)*scale + scale/2
+		py := minY + (my-2)*scale + scale/2
+		if px < b.Min.X || px >= b.Max.X || py < b.Min.Y || py >= b.Max.Y {
+			return false
+		}
+		return isDark(px, py)
+	}
+
+	var sb strings.Builder
+	for my := 0; my < rows; my += 2 {
+		sb.WriteString("\x1b[30;47m")
+		for mx := 0; mx < cols; mx++ {
+			top := moduleDark(mx, my)
+			bot := false
+			if my+1 < rows {
+				bot = moduleDark(mx, my+1)
+			}
+			switch {
+			case top && bot:
+				sb.WriteRune('█')
+			case top && !bot:
+				sb.WriteRune('▀')
+			case !top && bot:
+				sb.WriteRune('▄')
+			default:
+				sb.WriteRune(' ')
+			}
+		}
+		sb.WriteString("\x1b[0m\n")
+	}
+	return sb.String()
 }
 
 func (a terminalAuth) Password(_ context.Context) (string, error) {
