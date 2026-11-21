@@ -39,6 +39,7 @@ tasks:
   check:nix:
     desc: Verify flake.nix vendorHash and sandboxed Nix build stay in sync with go.mod/go.sum
     cmds:
+      - nix flake check --no-build
       - nix build --no-link
       - nix run . -- version
 
