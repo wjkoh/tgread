@@ -35,3 +35,13 @@ tasks:
       - go vet ./...
       - go test -race -count=1 ./...
       - CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/tgread ./cmd/tgread
+
+  check:nix:
+    desc: Verify flake.nix vendorHash and sandboxed Nix build stay in sync with go.mod/go.sum
+    cmds:
+      - nix build --no-link
+      - nix run . -- version
+
+  check:all:
+    desc: Run Go checks plus Nix flake drift verification
+    deps: [check, "check:nix"]

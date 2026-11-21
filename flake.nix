@@ -7,6 +7,7 @@
 
   outputs = { self, nixpkgs }:
     let
+      version = "0.1.0";
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
         pkgs = import nixpkgs { inherit system; };
@@ -29,20 +30,28 @@
         let
           tgreadPkg = pkgs.buildGoModule {
             pname = "tgread";
-            version = "0.1.0";
+            inherit version;
             src = ./.;
             vendorHash = "sha256-BvuHOD8/T1lnyzTPk4k5sACux8tQZ33NAkZnBOA/zwI=";
             env = {
               CGO_ENABLED = "0";
             };
             subPackages = [ "cmd/tgread" ];
-            ldflags = [ "-s" "-w" ];
+            ldflags = [
+              "-s"
+              "-w"
+              "-X main.appVersion=${version}"
+            ];
           };
         in
         {
           default = tgreadPkg;
           tgread = tgreadPkg;
         });
+
+      checks = forEachSupportedSystem ({ system, ... }: {
+        package = self.packages.${system}.default;
+      });
 
       overlays.default = final: prev: {
         tgread = self.packages.${prev.stdenv.hostPlatform.system}.tgread;

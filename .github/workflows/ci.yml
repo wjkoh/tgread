@@ -6,7 +6,8 @@ on:
   pull_request:
 
 jobs:
-  verify:
+  go-verify:
+    name: Go Test & Read-Only AST Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,3 +22,16 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Build static binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" ./cmd/tgread
+
+  nix-verify:
+    name: Nix Flake & vendorHash Drift Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Verify flake check and sandboxed Nix build
+        run: |
+          nix flake check --no-build
+          nix build --no-link
+          nix run . -- version

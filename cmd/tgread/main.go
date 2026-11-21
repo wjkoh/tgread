@@ -28,7 +28,7 @@ import (
 	"github.com/wjkoh/tgread/internal/tgread"
 )
 
-const appVersion = "0.1.0"
+var appVersion = "0.1.0"
 
 type commonConfig struct {
 	APIID                    int
