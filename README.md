@@ -21,6 +21,12 @@ Read the design essay: [Giving AI Agents Telegram Access Without Handing Over Yo
 
 ## Build & Install
 
+With Homebrew:
+
+```bash
+brew install wjkoh/tap/tgread
+```
+
 With Nix + Go-Task:
 
 ```bash
